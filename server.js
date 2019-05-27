@@ -60,15 +60,15 @@ app.get('/search-track', function (request, response) {
     });
 });
 
-app.get('/category-playlists', function (request, response) {
+app.get('/browse/categories', function (request, response) {
   
   // Get playlists from a browse category
   // Find out which categories are available here: https://beta.developer.spotify.com/console/get-browse-categories/
-  spotifyApi.getPlaylistsForCategory('psytrance', { limit : 20 })
+  spotifyApi.getCategories({ limit : 20 })
     .then(function(data) {
     
     // Send the list of playlists
-    response.send(data.body.playlists);
+    response.send(data.body.categories);
     
   }, function(err) {
     console.error(err);
