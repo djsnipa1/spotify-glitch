@@ -5,6 +5,16 @@
 var express = require('express');
 var app = express();
 
+// init Spotify API wrapper
+var SpotifyWebApi = require('spotify-web-api-node');
+var redirectUri = 'https://'+process.env.PROJECT_NAME+'.glitch.me/callback';
+var tokenExpirationEpoch;
+var spotifyApi = new SpotifyWebApi({
+  clientId : process.env.CLIENT_ID,
+  clientSecret : process.env.CLIENT_SECRET,
+  redirectUri : redirectUri
+});
+
 // http://expressjs.com/en/starter/static-files.html
 app.use(express.static('public'));
 
@@ -13,118 +23,40 @@ app.get("/", function (request, response) {
   response.sendFile(__dirname + '/views/index.html');
 });
 
-
-//-------------------------------------------------------------//
-//----------------------- AUTHORIZATION -----------------------//
-//-------------------------------------------------------------//
-
-
-// Initialize Spotify API wrapper
-var SpotifyWebApi = require('spotify-web-api-node');
-
-// The object we'll use to interact with the API
-var spotifyApi = new SpotifyWebApi({
-  clientId : process.env.CLIENT_ID,
-  clientSecret : process.env.CLIENT_SECRET
+app.get("/authorize", function (request, response) {
+  var scopesArray = request.query.scopes.split(',');
+  var authorizeURL = spotifyApi.createAuthorizeURL(scopesArray);
+  console.log(authorizeURL)
+  response.send(authorizeURL);
 });
 
-// Using the Client Credentials auth flow, authenticate our app
-spotifyApi.clientCredentialsGrant()
+// Exchange Authorization Code for an Access Token
+app.get("/callback", function (request, response) {
+  var authorizationCode = request.query.code;
+  
+  // Check folks haven't just gone direct to the callback URL
+  if (!authorizationCode) {
+    response.redirect('/');
+  } else {
+    response.sendFile(__dirname + '/views/callback.html');
+  }
+  
+  spotifyApi.authorizationCodeGrant(authorizationCode)
   .then(function(data) {
-  
-    // Save the access token so that it's used in future calls
+
+    // Set the access token and refresh token
     spotifyApi.setAccessToken(data.body['access_token']);
-    console.log('Got an access token: ' + spotifyApi.getAccessToken());
-  
+    spotifyApi.setRefreshToken(data.body['refresh_token']);
+
+    // Save the amount of seconds until the access token expired
+    tokenExpirationEpoch = (new Date().getTime() / 1000) + data.body['expires_in'];
+    console.log('Retrieved token. It expires in ' + Math.floor(tokenExpirationEpoch - new Date().getTime() / 1000) + ' seconds!');
   }, function(err) {
-    console.log('Something went wrong when retrieving an access token', err.message);
-  });
-
-
-//-------------------------------------------------------------//
-//------------------------- API CALLS -------------------------//
-//-------------------------------------------------------------//
-
-
-app.get('/search-track', function (request, response) {
-  
-  // Search for a track!
-  spotifyApi.searchTracks('track:Energetic Connetc', {limit: 1})
-    .then(function(data) {
-    
-      // Send the first (only) track object
-      response.send(data.body.tracks.items[0]);
-    
-    }, function(err) {
-      console.error(err);
-    });
-});
-
-app.get('/category-playlists', function (request, response) {
-  
-  // Get playlists from a browse category
-  // Find out which categories are available here: https://beta.developer.spotify.com/console/get-browse-categories/
-  spotifyApi.getPlaylistsForCategory('jazz', { limit : 5 })
-    .then(function(data) {
-    
-    // Send the list of playlists
-    response.send(data.body.playlists);
-    
-  }, function(err) {
-    console.error(err);
+    console.log('Something went wrong when retrieving the access token!', err.message);
   });
 });
 
-app.get('/audio-features', function (request, response) {
-  
-  // Get the audio features for a track ID
-  spotifyApi.getAudioFeaturesForTrack('4uLU6hMCjMI75M1A2tKUQC')
-    .then(function(data) {
-    
-      //Send the audio features object
-      response.send(data.body);
-    
-    }, function(err) {
-      console.error(err);
-    });
-});
-
-app.get('/artist', function (request, response) {
-  
-  // Get information about an artist
-  spotifyApi.getArtist('6jJ0s89eD6GaHleKKya26X')
-    .then(function(data) {
-    
-      // Send the list of tracks
-      response.send(data.body);
-    
-    }, function(err) {
-      console.error(err);
-    });
-});
-
-app.get('/artist-top-tracks', function (request, response) {
-  
-  // Get an artist's top tracks in a country
-  spotifyApi.getArtistTopTracks('0LcJLqbBmaGUft1e9Mm8HV', 'SE')
-    .then(function(data) {
-    
-      // Send the list of tracks
-      response.send(data.body.tracks);
-    
-    }, function(err) {
-      console.error(err);
-    });
-});
-
-
-//-------------------------------------------------------------//
-//------------------------ WEB SERVER -------------------------//
-//-------------------------------------------------------------//
-
-
-// Listen for requests to our app
-// We make these requests from client.js
+// listen for requests :)
 var listener = app.listen(process.env.PORT, function () {
   console.log('Your app is listening on port ' + listener.address().port);
 });
